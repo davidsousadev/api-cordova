@@ -6,17 +6,15 @@ const { Pool } = require('pg');
 const app = express();
 const porta = 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Configuração do banco PostgreSQL
+// PostgreSQL
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false } // Importante para conexões com Aiven ou Heroku
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
 
-// Criação da tabela, se não existir
+// Testa conexão e cria tabela se não existir
 pool.query(`
     CREATE TABLE IF NOT EXISTS atualizacoes (
         id SERIAL PRIMARY KEY,
@@ -27,9 +25,13 @@ pool.query(`
     if (err) {
         console.error('Erro ao criar tabela:', err);
     } else {
-        console.log('Tabela atualizacoes pronta.');
+        console.log('Tabela verificada/criada com sucesso.');
     }
 });
+
+// Middleware
+app.use(cors());
+app.use(express.json());
 
 // 🔥 Endpoint para gerar uma atualização manual
 app.get('/trigger', async (req, res) => {
@@ -41,14 +43,12 @@ app.get('/trigger', async (req, res) => {
             'INSERT INTO atualizacoes (mensagem, timestamp) VALUES ($1, $2) RETURNING *',
             [mensagem, timestamp]
         );
-
         res.json({
             success: true,
             data: result.rows[0]
         });
-    } catch (err) {
-        console.error('Erro no trigger:', err);
-        res.status(500).json({ success: false, error: err.message });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -58,7 +58,7 @@ app.get('/updates', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT * FROM atualizacoes WHERE timestamp > $1 ORDER BY timestamp ASC',
+            'SELECT * FROM atualizacoes WHERE timestamp > $1',
             [since]
         );
 
@@ -72,9 +72,8 @@ app.get('/updates', async (req, res) => {
                 nova: false
             });
         }
-    } catch (err) {
-        console.error('Erro no updates:', err);
-        res.status(500).json({ success: false, error: err.message });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
