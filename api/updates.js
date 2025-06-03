@@ -5,16 +5,17 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// Cria tabela se não existir
-await pool.query(`
-    CREATE TABLE IF NOT EXISTS atualizacoes (
-        id SERIAL PRIMARY KEY,
-        mensagem TEXT,
-        timestamp BIGINT
-    )
-`);
-
 export default async function handler(req, res) {
+    // CORS
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     if (req.method !== 'GET') {
         return res.status(405).json({ message: 'Method Not Allowed' });
     }
@@ -22,6 +23,14 @@ export default async function handler(req, res) {
     const since = parseInt(req.query.since) || 0;
 
     try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS atualizacoes (
+                id SERIAL PRIMARY KEY,
+                mensagem TEXT,
+                timestamp BIGINT
+            )
+        `);
+
         const result = await pool.query(
             'SELECT * FROM atualizacoes WHERE timestamp > $1',
             [since]
