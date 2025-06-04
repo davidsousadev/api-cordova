@@ -5,6 +5,7 @@
   ],
   "routes": [
     { "src": "/trigger", "dest": "/api/trigger.js" },
-    { "src": "/updates", "dest": "/api/updates.js" }
+    { "src": "/updates", "dest": "/api/updates.js" },
+    { "src": "/socket", "dest": "/api/socket.js" }
   ]
 }
