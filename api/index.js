@@ -1,34 +1,33 @@
-require('dotenv').config();
+const admin = require('firebase-admin');
+const { Pool } = require('pg');
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const admin = require('firebase-admin');
-const { Pool } = require('pg');
 
-// 🔥 Inicializa Firebase Admin usando JSON na variável de ambiente
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+// 🔥 Firebase
 const firebaseConfig = process.env.FIREBASE_CONFIG;
-
-
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 if (!firebaseConfig) {
-  console.error('❌ Variável FIREBASE_CONFIG não encontrada.');
-  process.exit(1);
+  throw new Error('❌ Variável FIREBASE_CONFIG não configurada.');
 }
 
 let serviceAccount;
 try {
   serviceAccount = JSON.parse(firebaseConfig);
 } catch (error) {
-  console.error('❌ Erro ao parsear FIREBASE_CONFIG:', error);
-  process.exit(1);
+  throw new Error('❌ Erro ao parsear FIREBASE_CONFIG: ' + error);
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
-// 🔗 Conexão PostgreSQL
+// 🔗 PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL.includes('localhost')
@@ -36,14 +35,9 @@ const pool = new Pool({
     : { rejectUnauthorized: false },
 });
 
-// 🚀 App Express
-const app = express();
-app.use(cors());
-app.use(bodyParser.json());
-
-// 🔥 Rota raiz
+// 🚀 Rotas
 app.get('/', (_req, res) => {
-  res.json({ message: '🚀 API de Notificações FCM está ativa!' });
+  res.json({ message: '🚀 API de Notificações FCM está ativa na Vercel!' });
 });
 
 app.get('/tokens', async (req, res) => {
@@ -52,13 +46,10 @@ app.get('/tokens', async (req, res) => {
     const tokens = result.rows.map(row => row.token);
     res.json({ tokens });
   } catch (error) {
-    console.error('Erro ao buscar tokens:', error);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
 
-
-// 🔗 Registrar Token
 app.post('/register-token', async (req, res) => {
   const { token } = req.body;
   if (!token) {
@@ -83,12 +74,10 @@ app.post('/register-token', async (req, res) => {
       token: rows[0],
     });
   } catch (error) {
-    console.error('Erro ao registrar token:', error);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
 
-// 🔥 Enviar Notificação
 app.post('/send-notification', async (req, res) => {
   const { title, body: messageBody, data, tokens } = req.body;
 
@@ -105,14 +94,11 @@ app.post('/send-notification', async (req, res) => {
     }
 
     if (targetTokens.length === 0) {
-      return res.status(200).json({ message: 'Nenhum token cadastrado para envio.' });
+      return res.status(200).json({ message: 'Nenhum token cadastrado.' });
     }
 
     const payload = {
-      notification: {
-        title,
-        body: messageBody,
-      },
+      notification: { title, body: messageBody },
       data: data || {},
     };
 
@@ -133,13 +119,10 @@ app.post('/send-notification', async (req, res) => {
       responses: response.responses,
     });
   } catch (error) {
-    console.error('Erro ao enviar notificação:', error);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 });
 
-// 🚀 Inicializa servidor
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ API rodando na porta ${PORT}`);
-});
+// 🔗 Exporta como função Serverless
+module.exports = app;
+module.exports.handler = (req, res) => app(req, res);
