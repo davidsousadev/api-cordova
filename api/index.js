@@ -1,4 +1,3 @@
-// api/index.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -21,7 +20,6 @@ if (process.env.FIREBASE_CONFIG) {
     console.log('✅ Firebase carregado da variável de ambiente');
   } catch (error) {
     console.error('❌ Erro no FIREBASE_CONFIG:', error);
-    // Não usar process.exit(1) em serverless, só lançar erro mesmo
     throw new Error('Erro no FIREBASE_CONFIG');
   }
 } else if (fs.existsSync('./api/serviceAccountKey.json')) {
@@ -134,12 +132,13 @@ app.post('/send-notification', async (req, res) => {
   }
 });
 
-// NÃO chamar app.listen no ambiente serverless da Vercel
+// ✅ Serve localmente fora da Vercel
 if (process.env.VERCEL !== '1') {
   app.listen(port, () => {
     console.log(`🚀 Servidor rodando em http://localhost:${port}`);
   });
 }
 
-// Exporta app para o Vercel usar como handler
+// ✅ Exporta corretamente para Vercel
 module.exports = app;
+module.exports = app.handler = (req, res) => app(req, res);
