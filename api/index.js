@@ -1,3 +1,4 @@
+// api/index.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -20,7 +21,8 @@ if (process.env.FIREBASE_CONFIG) {
     console.log('✅ Firebase carregado da variável de ambiente');
   } catch (error) {
     console.error('❌ Erro no FIREBASE_CONFIG:', error);
-    process.exit(1);
+    // Não usar process.exit(1) em serverless, só lançar erro mesmo
+    throw new Error('Erro no FIREBASE_CONFIG');
   }
 } else if (fs.existsSync('./api/serviceAccountKey.json')) {
   serviceAccount = require('./serviceAccountKey.json');
@@ -29,16 +31,18 @@ if (process.env.FIREBASE_CONFIG) {
   throw new Error('❌ Firebase não configurado!');
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
 // 🔗 PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL.includes('localhost')
-    ? false
-    : { rejectUnauthorized: false },
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost')
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 // 🔥 Rotas
@@ -52,6 +56,7 @@ app.get('/tokens', async (_req, res) => {
     const tokens = rows.map(r => r.token);
     res.json({ tokens });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
@@ -78,6 +83,7 @@ app.post('/register-token', async (req, res) => {
       token: rows[0],
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
@@ -123,15 +129,17 @@ app.post('/send-notification', async (req, res) => {
       responses: response.responses,
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Erro interno.' });
   }
 });
 
-// 🔥 Inicialização local
+// NÃO chamar app.listen no ambiente serverless da Vercel
 if (process.env.VERCEL !== '1') {
   app.listen(port, () => {
     console.log(`🚀 Servidor rodando em http://localhost:${port}`);
   });
 }
 
+// Exporta app para o Vercel usar como handler
 module.exports = app;
