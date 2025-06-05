@@ -8,6 +8,9 @@ const { Pool } = require('pg');
 // 🔥 Inicializa Firebase Admin usando JSON na variável de ambiente
 const firebaseConfig = process.env.FIREBASE_CONFIG;
 
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 if (!firebaseConfig) {
   console.error('❌ Variável FIREBASE_CONFIG não encontrada.');
   process.exit(1);
@@ -42,6 +45,18 @@ app.use(bodyParser.json());
 app.get('/', (_req, res) => {
   res.json({ message: '🚀 API de Notificações FCM está ativa!' });
 });
+
+app.get('/tokens', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT token FROM fcm_tokens');
+    const tokens = result.rows.map(row => row.token);
+    res.json({ tokens });
+  } catch (error) {
+    console.error('Erro ao buscar tokens:', error);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 
 // 🔗 Registrar Token
 app.post('/register-token', async (req, res) => {
