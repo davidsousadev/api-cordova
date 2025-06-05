@@ -40,7 +40,7 @@ app.use(bodyParser.json());
 
 // 🔥 Rota raiz
 app.get('/', (_req, res) => {
-  res.json({ message: 'API de Notificações FCM está ativa!' });
+  res.json({ message: '🚀 API de Notificações FCM está ativa!' });
 });
 
 // 🔗 Registrar Token
@@ -108,7 +108,7 @@ app.post('/send-notification', async (req, res) => {
 
     await pool.query(
       'INSERT INTO notifications_log (title, body, data) VALUES ($1, $2, $3)',
-      [title, messageBody, data || {}]
+      [title, messageBody, JSON.stringify(data) || '{}']
     );
 
     return res.status(200).json({
@@ -126,5 +126,5 @@ app.post('/send-notification', async (req, res) => {
 // 🚀 Inicializa servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`API rodando na porta ${PORT}`);
+  console.log(`✅ API rodando na porta ${PORT}`);
 });
