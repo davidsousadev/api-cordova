@@ -1,34 +1,39 @@
 require('dotenv').config();
-const admin = require('firebase-admin');
-const { Pool } = require('pg');
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const admin = require('firebase-admin');
+const { Pool } = require('pg');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
+
+const port = process.env.PORT || 3000;
 
 // 🔥 Firebase Config
-const firebaseConfig = process.env.FIREBASE_CONFIG;
-if (!firebaseConfig) {
-  throw new Error('❌ Variável FIREBASE_CONFIG não configurada.');
-}
-
 let serviceAccount;
-try {
-  serviceAccount = JSON.parse(firebaseConfig);
-} catch (error) {
-  throw new Error('❌ Erro ao parsear FIREBASE_CONFIG: ' + error.message);
+if (process.env.FIREBASE_CONFIG) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
+    console.log('✅ Firebase carregado da variável de ambiente');
+  } catch (error) {
+    console.error('❌ Erro no FIREBASE_CONFIG:', error);
+    process.exit(1);
+  }
+} else if (fs.existsSync('./api/serviceAccountKey.json')) {
+  serviceAccount = require('./serviceAccountKey.json');
+  console.log('✅ Firebase carregado do arquivo local');
+} else {
+  throw new Error('❌ Firebase não configurado!');
 }
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-}
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
-// 🔗 PostgreSQL Config
+// 🔗 PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL.includes('localhost')
@@ -36,30 +41,24 @@ const pool = new Pool({
     : { rejectUnauthorized: false },
 });
 
-// 🚀 Rotas
-app.get('/', (_req, res) => {
-  res.json({ message: '🚀 API de Notificações FCM está ativa!' });
+// 🔥 Rotas
+app.get('/', (req, res) => {
+  res.json({ message: '🚀 API funcionando!' });
 });
 
-// 🔍 Buscar Tokens
 app.get('/tokens', async (_req, res) => {
   try {
-    const result = await pool.query('SELECT token FROM fcm_tokens');
-    const tokens = result.rows.map((row) => row.token);
+    const { rows } = await pool.query('SELECT token FROM fcm_tokens');
+    const tokens = rows.map(r => r.token);
     res.json({ tokens });
-  } catch (error) {
-    console.error('Erro ao buscar tokens:', error);
-    res.status(500).json({ error: 'Erro interno ao buscar tokens.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro interno' });
   }
 });
 
-// 📝 Registrar Token
 app.post('/register-token', async (req, res) => {
   const { token } = req.body;
-
-  if (!token) {
-    return res.status(400).json({ error: 'Token FCM é obrigatório.' });
-  }
+  if (!token) return res.status(400).json({ error: 'Token é obrigatório' });
 
   try {
     const query = `
@@ -74,32 +73,28 @@ app.post('/register-token', async (req, res) => {
       return res.status(200).json({ message: 'Token já cadastrado.' });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Token registrado com sucesso.',
       token: rows[0],
     });
-  } catch (error) {
-    console.error('Erro ao registrar token:', error);
-    res.status(500).json({ error: 'Erro interno ao registrar token.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro interno' });
   }
 });
 
-// 🚀 Enviar Notificação
 app.post('/send-notification', async (req, res) => {
-  const { title, body: messageBody, data = {}, tokens } = req.body;
+  const { title, body: messageBody, data, tokens } = req.body;
 
   if (!title || !messageBody) {
-    return res
-      .status(400)
-      .json({ error: 'Os campos title e body são obrigatórios.' });
+    return res.status(400).json({ error: 'title e body são obrigatórios.' });
   }
 
   try {
     let targetTokens = tokens;
 
     if (!Array.isArray(targetTokens) || targetTokens.length === 0) {
-      const result = await pool.query('SELECT token FROM fcm_tokens');
-      targetTokens = result.rows.map((row) => row.token);
+      const { rows } = await pool.query('SELECT token FROM fcm_tokens');
+      targetTokens = rows.map((row) => row.token);
     }
 
     if (targetTokens.length === 0) {
@@ -108,7 +103,7 @@ app.post('/send-notification', async (req, res) => {
 
     const payload = {
       notification: { title, body: messageBody },
-      data,
+      data: data || {},
     };
 
     const response = await admin.messaging().sendMulticast({
@@ -116,10 +111,9 @@ app.post('/send-notification', async (req, res) => {
       ...payload,
     });
 
-    // Log da notificação no banco
     await pool.query(
       'INSERT INTO notifications_log (title, body, data) VALUES ($1, $2, $3)',
-      [title, messageBody, JSON.stringify(data)]
+      [title, messageBody, JSON.stringify(data) || '{}']
     );
 
     res.status(200).json({
@@ -128,12 +122,16 @@ app.post('/send-notification', async (req, res) => {
       failureCount: response.failureCount,
       responses: response.responses,
     });
-  } catch (error) {
-    console.error('Erro ao enviar notificação:', error);
-    res.status(500).json({ error: 'Erro interno ao enviar notificação.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro interno.' });
   }
 });
 
-// 🔗 Exportação Serverless
+// 🔥 Inicialização local
+if (process.env.VERCEL !== '1') {
+  app.listen(port, () => {
+    console.log(`🚀 Servidor rodando em http://localhost:${port}`);
+  });
+}
+
 module.exports = app;
-module.exports.handler = (req, res) => app(req, res);
