@@ -1,3 +1,4 @@
+require('dotenv').config();
 const admin = require('firebase-admin');
 const { Pool } = require('pg');
 const express = require('express');
@@ -6,9 +7,9 @@ const bodyParser = require('body-parser');
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// 🔥 Firebase
+// 🔥 Firebase Config
 const firebaseConfig = process.env.FIREBASE_CONFIG;
 if (!firebaseConfig) {
   throw new Error('❌ Variável FIREBASE_CONFIG não configurada.');
@@ -18,7 +19,7 @@ let serviceAccount;
 try {
   serviceAccount = JSON.parse(firebaseConfig);
 } catch (error) {
-  throw new Error('❌ Erro ao parsear FIREBASE_CONFIG: ' + error);
+  throw new Error('❌ Erro ao parsear FIREBASE_CONFIG: ' + error.message);
 }
 
 if (!admin.apps.length) {
@@ -27,7 +28,7 @@ if (!admin.apps.length) {
   });
 }
 
-// 🔗 PostgreSQL
+// 🔗 PostgreSQL Config
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL.includes('localhost')
@@ -37,21 +38,25 @@ const pool = new Pool({
 
 // 🚀 Rotas
 app.get('/', (_req, res) => {
-  res.json({ message: '🚀 API de Notificações FCM está ativa na Vercel!' });
+  res.json({ message: '🚀 API de Notificações FCM está ativa!' });
 });
 
-app.get('/tokens', async (req, res) => {
+// 🔍 Buscar Tokens
+app.get('/tokens', async (_req, res) => {
   try {
     const result = await pool.query('SELECT token FROM fcm_tokens');
-    const tokens = result.rows.map(row => row.token);
+    const tokens = result.rows.map((row) => row.token);
     res.json({ tokens });
   } catch (error) {
-    res.status(500).json({ error: 'Erro interno' });
+    console.error('Erro ao buscar tokens:', error);
+    res.status(500).json({ error: 'Erro interno ao buscar tokens.' });
   }
 });
 
+// 📝 Registrar Token
 app.post('/register-token', async (req, res) => {
   const { token } = req.body;
+
   if (!token) {
     return res.status(400).json({ error: 'Token FCM é obrigatório.' });
   }
@@ -69,20 +74,24 @@ app.post('/register-token', async (req, res) => {
       return res.status(200).json({ message: 'Token já cadastrado.' });
     }
 
-    return res.status(201).json({
+    res.status(201).json({
       message: 'Token registrado com sucesso.',
       token: rows[0],
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro interno.' });
+    console.error('Erro ao registrar token:', error);
+    res.status(500).json({ error: 'Erro interno ao registrar token.' });
   }
 });
 
+// 🚀 Enviar Notificação
 app.post('/send-notification', async (req, res) => {
-  const { title, body: messageBody, data, tokens } = req.body;
+  const { title, body: messageBody, data = {}, tokens } = req.body;
 
   if (!title || !messageBody) {
-    return res.status(400).json({ error: 'title e body são obrigatórios.' });
+    return res
+      .status(400)
+      .json({ error: 'Os campos title e body são obrigatórios.' });
   }
 
   try {
@@ -99,7 +108,7 @@ app.post('/send-notification', async (req, res) => {
 
     const payload = {
       notification: { title, body: messageBody },
-      data: data || {},
+      data,
     };
 
     const response = await admin.messaging().sendMulticast({
@@ -107,22 +116,24 @@ app.post('/send-notification', async (req, res) => {
       ...payload,
     });
 
+    // Log da notificação no banco
     await pool.query(
       'INSERT INTO notifications_log (title, body, data) VALUES ($1, $2, $3)',
-      [title, messageBody, JSON.stringify(data) || '{}']
+      [title, messageBody, JSON.stringify(data)]
     );
 
-    return res.status(200).json({
+    res.status(200).json({
       message: 'Notificação enviada.',
       successCount: response.successCount,
       failureCount: response.failureCount,
       responses: response.responses,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro interno.' });
+    console.error('Erro ao enviar notificação:', error);
+    res.status(500).json({ error: 'Erro interno ao enviar notificação.' });
   }
 });
 
-// 🔗 Exporta como função Serverless
+// 🔗 Exportação Serverless
 module.exports = app;
 module.exports.handler = (req, res) => app(req, res);
